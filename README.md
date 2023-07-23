@@ -67,9 +67,6 @@ curl "http://localhost:8080/hotel?checkInDate=YYYY-MM-DD&checkOutDate=YYYY-MM-DD
 
 Replace YYYY-MM-DD with the desired dates and CityName with the destination city.
 
-## Contributing
-
-Please read `CONTRIBUTING.md` for details on our code of conduct, and the process for submitting pull requests to us.
 
 ## License
 
