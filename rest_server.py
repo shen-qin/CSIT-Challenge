@@ -5,6 +5,13 @@ from pymongo import MongoClient
 from urllib.parse import urlparse, parse_qs
 from wsgiref import simple_server
 
+CONNECTION_STRING = "mongodb+srv://userReadOnly:7ZT817O8ejDfhnBM@minichallenge.q4nve1r.mongodb.net/"
+
+def connect_to_db(collection_name:str):
+        client = MongoClient(CONNECTION_STRING)
+        db = client["minichallenge"]
+        return db[collection_name]
+
 
 def is_iso_date(date_str):
     try:
@@ -31,54 +38,45 @@ class HelloWorld:
 
 
 class Flight:
-    departure_date_str = ""
-    return_date_str = ""
-    dst_city = ""
+    def __init__(self):
+        self.departure_date_str = ""
+        self.return_date_str = ""
+        self.dst_city = ""
 
     def find_cheapest_flight(self, flight_data):
-        if flight_data is None:
+        if not flight_data:
             return None
-        current_price = None
+        
+        min_price = None
         cheapest_flight = []
 
         for flight in flight_data:
-            if current_price is None:
-                cheapest_flight.append(flight)
-                current_price = flight["price"]
+            if min_price is None or flight["price"] < min_price:
+                cheapest_flight = [flight]
+                min_price = flight["price"]
 
-            elif flight["price"] < current_price:
-                cheapest_flight = []
-                cheapest_flight.append(flight)
-                current_price = flight["price"]
-
-            elif flight["price"] == current_price:
+            elif flight["price"] == min_price:
                 cheapest_flight.append(flight)
 
         return cheapest_flight
 
     def generate_flight_results(self, cheapest_flight_to, cheapest_flight_back):
-        results = []
-        template = {
-            "City": self.dst_city,
-            "Departure Date": self.departure_date_str,
-            "Departure Airline": "",
-            "Departure Price": None,
-            "Return Date": self.return_date_str,
-            "Return Airline": "",
-            "Return Price": None,
-        }
-
         if cheapest_flight_to is None or cheapest_flight_back is None:
-            return results
-        for flight_to in cheapest_flight_to:
-            for flight_back in cheapest_flight_back:
-                current = template.copy()
-                current["Departure Airline"] = flight_to["airlinename"]
-                current["Departure Price"] = flight_to["price"]
-                current["Return Airline"] = flight_back["airlinename"]
-                current["Return Price"] = flight_back["price"]
-                results.append(current)
-        return results
+            return []
+        
+        return [
+            {
+                "City": self.dst_city,
+                "Departure Date": self.departure_date_str,
+                "Departure Airline": flight_to["airlinename"],
+                "Departure Price": flight_to["price"],
+                "Return Date": self.return_date_str,
+                "Return Airline": flight_back["airlinename"],
+                "Return Price": flight_back["price"],
+            }
+            for flight_to in cheapest_flight_to
+            for flight_back in cheapest_flight_back
+        ]
 
     def on_get(self, req, resp):
         # Retrieve query parameters
@@ -87,6 +85,7 @@ class Flight:
         self.departure_date_str = query_params.get("departureDate", [""])[0]
         self.return_date_str = query_params.get("returnDate", [""])[0]
         self.dst_city = query_params.get("destination", [""])[0]
+        
         if not validate_req(
             self.departure_date_str, self.return_date_str, self.dst_city
         ):
@@ -98,32 +97,23 @@ class Flight:
         return_date = datetime.strptime(self.return_date_str, "%Y-%m-%d")
 
         # Connect to MongoDB
-        CONNECTION_STRING = "mongodb+srv://userReadOnly:7ZT817O8ejDfhnBM@minichallenge.q4nve1r.mongodb.net/"
-        client = MongoClient(CONNECTION_STRING)
-        db = client["minichallenge"]
-        collection = db["flights"]
+        flight_collection = connect_to_db("flights")
 
         # Query MongoDB for flight data based on the parameters
-        flight_to = {
+        flight_to_query = {
             "date": departure_date,
             "srccountry": "Singapore",
             "destcity": self.dst_city,
         }
 
-        flight_data = collection.find(flight_to)
-        cheapest_flight_to = self.find_cheapest_flight(flight_data)
-        # pprint.pprint(cheapest_flight_to)
-
-        flight_back = {
+        flight_back_query = {
             "date": return_date,
             "destcountry": "Singapore",
             "srccity": self.dst_city,
         }
 
-        flight_data = collection.find(flight_back)
-
-        cheapest_flight_back = self.find_cheapest_flight(flight_data)
-        # pprint.pprint(cheapest_flight_back)
+        cheapest_flight_to = self.find_cheapest_flight(flight_collection.find(flight_to_query))
+        cheapest_flight_back = self.find_cheapest_flight(flight_collection.find(flight_back_query))
 
         results = self.generate_flight_results(cheapest_flight_to, cheapest_flight_back)
 
@@ -132,10 +122,10 @@ class Flight:
 
 
 class Hotel:
-
-    chk_in_date_str = ""
-    chk_out_date_str = ""
-    dst_city = ""
+    def __init__(self):
+        self.chk_in_date_str = ""
+        self.chk_out_date_str = ""
+        self.dst_city = ""
 
     def on_get(self, req, resp):
         # Retrieve query parameters
@@ -144,6 +134,7 @@ class Hotel:
         self.chk_in_date_str = query_params.get("checkInDate", [""])[0]
         self.chk_out_date_str = query_params.get("checkOutDate", [""])[0]
         self.dst_city = query_params.get("destination", [""])[0]
+        
         if not validate_req(self.chk_in_date_str, self.chk_out_date_str, self.dst_city):
             resp.status = falcon.HTTP_BAD_REQUEST
             return
@@ -153,10 +144,7 @@ class Hotel:
         chk_out_date = datetime.strptime(self.chk_out_date_str, "%Y-%m-%d")
 
         # Connect to MongoDB
-        CONNECTION_STRING = "mongodb+srv://userReadOnly:7ZT817O8ejDfhnBM@minichallenge.q4nve1r.mongodb.net/"
-        client = MongoClient(CONNECTION_STRING)
-        db = client["minichallenge"]
-        hotels_collection = db["hotels"]
+        hotels_collection = connect_to_db("hotels")
 
         cur_date = chk_in_date
         available_hotels = {}
@@ -184,31 +172,26 @@ class Hotel:
             cur_date += timedelta(days=1)
             expected_num_days += 1
 
-        filtered_available_hotels = {}
-
-        for hotel_name, info in available_hotels.items():
-            price, num_days = info  # Unpack the information about the hotel
-            if num_days == expected_num_days:
-                filtered_available_hotels[hotel_name] = price
+        filtered_available_hotels = {hotel_name: price for hotel_name, (price, num_days) in available_hotels.items() if num_days == expected_num_days}
 
         if not filtered_available_hotels:
             resp.body = json.dumps([])
             resp.status = falcon.HTTP_200
             return
 
-        cheapest_hotel = min(
-            filtered_available_hotels, key=filtered_available_hotels.get
-        )
-        cheapest_price = filtered_available_hotels[cheapest_hotel]
+        min_price = min(filtered_available_hotels.values())
+        
+        cheapest_hotels = [hotel for hotel, price in filtered_available_hotels.items() if price == min_price]
 
         results = [
             {
                 "City": self.dst_city,
                 "Check In Date": self.chk_in_date_str,
                 "Check Out Date": self.chk_out_date_str,
-                "Hotel": cheapest_hotel,
-                "Price": cheapest_price,
+                "Hotel": hotel_name,
+                "Price": min_price,
             }
+             for hotel_name in cheapest_hotels
         ]
 
         resp.body = json.dumps(results)
@@ -217,14 +200,12 @@ class Hotel:
 
 app = falcon.App()
 
-# Define the routes
 app.add_route("/", HelloWorld())
 app.add_route("/flight", Flight())
 app.add_route("/hotel", Hotel())
 
 if __name__ == "__main__":
 
-    # Create a simple WSGI server to run the application
     server = simple_server.make_server("0.0.0.0", 8080, app)
     print("Serving on http://localhost:8080/")
     server.serve_forever()
