@@ -75,4 +75,3 @@ This project is licensed under the MIT License - see the `LICENSE.md` file for d
 ## Acknowledgments
 
 - CSIT for providing the opportunity to work on this project.
-- Falcon and MongoDB for their robust platforms.
